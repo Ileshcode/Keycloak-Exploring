@@ -1,0 +1,28 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: resource-server
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI}
+          jwk-set-uri: ${KEYCLOAK_JWK_SET_URI}
+  docker:
+    compose:
+      start:
+        command: up
+      stop:
+        command: down
+      enabled: false
+
+cors:
+  urls: ${CORS_URLS}
+keycloak:
+  server-ulr: ${KEYCLOAK_SERVER_URL}
+  realm: ${KEYCLOAK_REALM_NAME}
+  admin:
+    client-id: ${KEYCLOAK_ADMIN_CLIENT_ID}
+    client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET}

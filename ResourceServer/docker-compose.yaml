@@ -1,0 +1,58 @@
+name: keycloak-exploring
+services:
+  db:
+    image: postgres:17
+    container_name: keycloak-exploring-db
+    restart: always
+    environment:
+      POSTGRES_DB: keycloak-exploring-db
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    networks:
+      keycloak-exploring-net:
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U admin -d keycloak-exploring-db" ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  mailpit:
+    image: axllent/mailpit
+    container_name: keycloak-exploring-mailpit
+    restart: always
+    ports:
+      - "8025:8025"
+    networks:
+      keycloak-exploring-net:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    container_name: keycloak-exploring-keycloak
+    restart: always
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://db:5432/keycloak
+      KC_DB_USERNAME: admin
+      KC_DB_PASSWORD: admin
+    ports:
+      - "8180:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    command:
+      - start-dev
+    networks:
+      keycloak-exploring-net:
+
+
+
+
+
+networks:
+  keycloak-exploring-net:
+    driver: bridge
+volumes:
+  db_data:
+
