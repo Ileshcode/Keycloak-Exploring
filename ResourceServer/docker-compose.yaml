@@ -45,6 +45,22 @@ services:
       - start-dev
     networks:
       keycloak-exploring-net:
+  redis:
+    image: redis:7.4-alpine
+    container_name: keycloak-exploring-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      keycloak-exploring-net:
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
 
 
 
@@ -55,4 +71,5 @@ networks:
     driver: bridge
 volumes:
   db_data:
+  redis_data:
 

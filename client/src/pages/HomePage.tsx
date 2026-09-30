@@ -1,11 +1,18 @@
 import {Box, Button, Card, CardContent, Stack, Typography} from "@mui/material";
-import {useAuth} from "react-oidc-context";
 import {useNavigate} from "react-router-dom";
+import {API} from "../api/API.ts";
 
 
 export default function HomePage() {
-    const auth = useAuth()
+
     const navigation = useNavigate()
+
+    const logout = () => {
+        API.post('/logout')
+            .then((response) => {
+                window.location.href = response.data
+            })
+    }
     return (
         <Box>
             <Card>
@@ -16,12 +23,8 @@ export default function HomePage() {
                             <Button onClick={() => navigation('/secured')} variant={'outlined'}>
                                 <Typography>Secured page</Typography>
                             </Button>
+                            <Button onClick={() => logout()}>Log out</Button>
                         </Stack>
-                        {auth.isAuthenticated &&
-                            <Button onClick={() => auth.signoutRedirect()} sx={{maxWidth:'40vh'}} variant={'contained'}>
-                                <Typography>Logout</Typography>
-                            </Button>
-                        }
                     </Stack>
                 </CardContent>
             </Card>

@@ -6,10 +6,21 @@ spring:
     name: resource-server
   security:
     oauth2:
-      resourceserver:
-        jwt:
-          issuer-uri: ${KEYCLOAK_ISSUER_URI}
-          jwk-set-uri: ${KEYCLOAK_JWK_SET_URI}
+      client:
+        registration:
+          keycloak:
+            provider: keycloak
+            client-id: ${KEYCLOAK_BFF_CLIENT_ID}
+            client-secret: ${KEYCLOAK_BFF_CLIENT_SECRET}
+            authorization-grant-type: authorization_code
+            scope:
+              - openid
+              - profile
+              - email
+            redirect-uri: "{baseUrl}/login/oauth2/code/keycloak"
+        provider:
+          keycloak:
+            issuer-uri: ${KEYCLOAK_ISSUER_URI}
   docker:
     compose:
       start:
@@ -17,9 +28,19 @@ spring:
       stop:
         command: down
       enabled: false
+  data:
+    redis:
+      port: ${REDIS_PORT}
+      host: ${REDIS_HOST}
 
 cors:
   urls: ${CORS_URLS}
+csrf:
+  domain: ${CSRF_DOMAIN}
+auth:
+  post-redir-url: ${POST_AUTH_REDIRECT_URL}
+app:
+  audience: ${APP_AUDIENCE}
 keycloak:
   server-ulr: ${KEYCLOAK_SERVER_URL}
   realm: ${KEYCLOAK_REALM_NAME}
