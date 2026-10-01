@@ -39,6 +39,12 @@ public class ResourceController {
         return "OK";
     }
 
+    @GetMapping("/admin/status")
+    @PreAuthorize("hasRole('ADMIN')")
+    public String adminStatus() {
+        return "OK";
+    }
+
     @GetMapping("/api/status")
     @PreAuthorize("hasAnyRole('USER','ADMIN')")
     public String apiStatus() {

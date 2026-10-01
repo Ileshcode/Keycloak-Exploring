@@ -4,39 +4,39 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
-import org.springframework.security.config.annotation.web.configurers.oauth2.server.resource.OAuth2ResourceServerConfigurer;
-import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import org.springframework.security.oauth2.client.oidc.web.logout.OidcClientInitiatedLogoutSuccessHandler;
-import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
+import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserRequest;
+import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserService;
+import org.springframework.security.oauth2.client.userinfo.OAuth2UserService;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
+import org.springframework.security.oauth2.core.oidc.user.DefaultOidcUser;
+import org.springframework.security.oauth2.core.oidc.user.OidcUser;
 import org.springframework.security.oauth2.jwt.*;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
+import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.SimpleUrlAuthenticationSuccessHandler;
-import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.util.matcher.RequestHeaderRequestMatcher;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import ru.ilesh.resourceserver.security.BFFLogoutSuccessHandler;
 
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
+import java.util.*;
 import java.util.stream.Stream;
 
 @Configuration
 @RequiredArgsConstructor
+@EnableMethodSecurity
 public class SecurityConfig {
 
 
@@ -49,28 +49,9 @@ public class SecurityConfig {
     private final BFFLogoutSuccessHandler logoutSuccessHandler;
 
 
-    @Bean
-    @Order(1)
-    public SecurityFilterChain apiSecurityFilterChain(HttpSecurity http, JwtDecoder customJwtDecoder) throws Exception {
-        return http
-                .securityMatcher("/api/**")
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .csrf(AbstractHttpConfigurer::disable)
-                .cors(AbstractHttpConfigurer::disable)
-                .authorizeHttpRequests(authz -> authz
-                        .anyRequest().authenticated()
-                )
-                .oauth2ResourceServer(conf -> conf
-                        .jwt(jwtConfigurer -> jwtConfigurer
-                                .jwtAuthenticationConverter(jwtAuthenticationConverter())
-                                .decoder(customJwtDecoder)))
-                .build();
-    }
-
 
     @Bean
-    @Order(2)
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain securityFilterChain(HttpSecurity http, JwtDecoder customJwtDecoder) throws Exception {
         return http
                 .authorizeHttpRequests(authorizeRequests -> authorizeRequests
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
@@ -81,11 +62,24 @@ public class SecurityConfig {
                 .csrf((csrf) -> csrf
                         .spa()
                         .csrfTokenRepository(cookieCsrfTokenRepository())
+                        .requireCsrfProtectionMatcher(request ->
+                            request.getHeader("Authorization") == null &&
+                                    !List.of("GET", "HEAD", "OPTIONS", "TRACE").contains(request.getMethod())
+                        )
                 )
                 .oauth2Login(login -> login
+                        .userInfoEndpoint(ui -> ui.oidcUserService(userService(customJwtDecoder)))
                         .successHandler(bffSuccessHandler())
                 )
+                .oauth2ResourceServer(config -> config
+                        .jwt(jwtConfigurer -> jwtConfigurer
+                                .decoder(customJwtDecoder)
+                                .jwtAuthenticationConverter(jwtAuthenticationConverter())))
                 .logout(logout -> logout.logoutSuccessHandler(logoutSuccessHandler))
+                .exceptionHandling(ex -> ex.defaultAuthenticationEntryPointFor(
+                        new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED),
+                        new RequestHeaderRequestMatcher("Authorization")
+                ))
                 .build();
     }
 
@@ -98,7 +92,7 @@ public class SecurityConfig {
     }
 
     @Bean
-    public CookieCsrfTokenRepository cookieCsrfTokenRepository () {
+    public CookieCsrfTokenRepository cookieCsrfTokenRepository() {
         CookieCsrfTokenRepository repository = CookieCsrfTokenRepository.withHttpOnlyFalse();
         repository.setCookieCustomizer(customizer -> {
             customizer.domain(csrfDomain);
@@ -122,15 +116,15 @@ public class SecurityConfig {
     }
 
     @Bean
-    public JwtDecoder customJwtDecoder (@Value("${spring.security.oauth2.client.provider.keycloak.issuer-uri}") String issuer,
-                                        @Value("${app.audience}") String audience) {
+    public JwtDecoder customJwtDecoder(@Value("${spring.security.oauth2.client.provider.keycloak.issuer-uri}") String issuer,
+                                       @Value("${app.audience}") String audience) {
         NimbusJwtDecoder jwtDecoder = JwtDecoders.fromIssuerLocation(issuer);
 
         OAuth2TokenValidator<Jwt> withIssuer = JwtValidators.createDefaultWithIssuer(issuer);
 
         OAuth2TokenValidator<Jwt> audValidator = new JwtClaimValidator<List<String>>(
                 JwtClaimNames.AUD,
-                aud -> aud !=null && aud.contains(audience)
+                aud -> aud != null && aud.contains(audience)
         );
 
         jwtDecoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(withIssuer, audValidator));
@@ -140,15 +134,45 @@ public class SecurityConfig {
     }
 
     @Bean
+    public OAuth2UserService<OidcUserRequest, OidcUser> userService(JwtDecoder customJwtDecoder) {
+        OidcUserService delegate = new OidcUserService();
+
+        return (userRequest -> {
+            OidcUser oidcUser = delegate.loadUser(userRequest);
+            String accessTokenValue = userRequest.getAccessToken().getTokenValue();
+            Jwt jwt = customJwtDecoder.decode(accessTokenValue);
+
+            Map<String, Object> realmAccess = jwt.getClaim("realm_access");
+            if (realmAccess == null) {
+                throw new RuntimeException("Realm access required");
+            }
+            List<String> roles = (List<String>) realmAccess.get("roles");
+            if (roles == null) {
+                throw new RuntimeException("Roles required");
+            }
+
+            Set<GrantedAuthority> authorities = new HashSet<>(oidcUser.getAuthorities());
+
+            roles.forEach(role -> authorities.add(new SimpleGrantedAuthority(role)));
+
+            return new DefaultOidcUser(authorities, oidcUser.getIdToken(), oidcUser.getUserInfo());
+        });
+    }
+
+    @Bean
     public JwtAuthenticationConverter jwtAuthenticationConverter() {
         JwtAuthenticationConverter jwtAuthenticationConverter = new JwtAuthenticationConverter();
         jwtAuthenticationConverter.setPrincipalClaimName("preferred_username");
 
         jwtAuthenticationConverter.setJwtGrantedAuthoritiesConverter(token -> {
             Map<String, Object> realmAccess = (Map<String, Object>) token.getClaim("realm_access");
-            if(realmAccess == null) {throw new RuntimeException("Realm access required");}
+            if (realmAccess == null) {
+                throw new RuntimeException("Realm access required");
+            }
             List<String> roles = (List<String>) realmAccess.get("roles");
-            if(roles == null) {throw new RuntimeException("Roles required");}
+            if (roles == null) {
+                throw new RuntimeException("Roles required");
+            }
 
             List<SimpleGrantedAuthority> realmRoles = roles.stream()
                     .map(SimpleGrantedAuthority::new)
