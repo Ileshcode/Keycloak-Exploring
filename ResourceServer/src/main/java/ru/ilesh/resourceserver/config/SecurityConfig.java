@@ -24,12 +24,18 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.SimpleUrlAuthenticationSuccessHandler;
+import org.springframework.security.web.context.DelegatingSecurityContextRepository;
+import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
+import org.springframework.security.web.context.RequestAttributeSecurityContextRepository;
+import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 import org.springframework.security.web.util.matcher.RequestHeaderRequestMatcher;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import ru.ilesh.resourceserver.security.BFFLogoutSuccessHandler;
+import ru.ilesh.resourceserver.security.KcActionResolver;
 
 import java.util.*;
 import java.util.stream.Stream;
@@ -47,6 +53,7 @@ public class SecurityConfig {
     @Value("${auth.post-redir-url}")
     private String postAuthRedirectUrl;
     private final BFFLogoutSuccessHandler logoutSuccessHandler;
+    private final KcActionResolver kcActionResolver;
 
 
 
@@ -68,6 +75,7 @@ public class SecurityConfig {
                         )
                 )
                 .oauth2Login(login -> login
+                        .authorizationEndpoint(a -> a.authorizationRequestResolver(kcActionResolver))
                         .userInfoEndpoint(ui -> ui.oidcUserService(userService(customJwtDecoder)))
                         .successHandler(bffSuccessHandler())
                 )
@@ -78,8 +86,9 @@ public class SecurityConfig {
                 .logout(logout -> logout.logoutSuccessHandler(logoutSuccessHandler))
                 .exceptionHandling(ex -> ex.defaultAuthenticationEntryPointFor(
                         new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED),
-                        new RequestHeaderRequestMatcher("Authorization")
+                        PathPatternRequestMatcher.pathPattern("/**")
                 ))
+                .securityContext(sc -> sc.securityContextRepository(securityContextRepository()))
                 .build();
     }
 
@@ -185,5 +194,13 @@ public class SecurityConfig {
 
         return jwtAuthenticationConverter;
 
+    }
+
+    @Bean
+    public SecurityContextRepository securityContextRepository() {
+        return new DelegatingSecurityContextRepository(
+                new RequestAttributeSecurityContextRepository(),
+                new HttpSessionSecurityContextRepository()
+        );
     }
 }
